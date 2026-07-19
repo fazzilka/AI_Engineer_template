@@ -28,6 +28,9 @@ dev = [
     "ruff>=0.12.5",
 ]
 
+[tool.uv]
+required-version = ">=0.11.0,<0.12"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/app"]
 
@@ -45,7 +48,7 @@ known-first-party = ["app"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "evals"]
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
