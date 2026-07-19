@@ -1,79 +1,143 @@
 # Architecture
 
-The template uses ports and adapters around one complete chat use case. The layering is intentionally
-small: it protects core behavior from SDK churn without turning the starter into a framework of its own.
+The template follows ports and adapters. Dependencies point inward:
+
+```text
+API / CLI → Application → Ports → Domain
+                         ↑
+                      Adapters
+```
+
+`domain/` contains immutable dataclasses, enums, deterministic identity rules, and typed errors. It
+does not import transport, model, retrieval, logging, or metrics frameworks. `application/` coordinates
+use cases through ports. LangChain and third-party SDK types are translated only inside adapters.
+
+## Request flow
 
 ```mermaid
 flowchart LR
-    Client["HTTP client"] --> API["FastAPI routes"]
-    API --> UseCase["ChatService"]
-    UseCase --> Port["LLMClient port"]
-    Port --> Metrics["Instrumented adapter"]
-    Metrics --> Fake["Fake LLM"]
-    Metrics --> Remote["OpenAI-compatible API"]
-    Prompt["Versioned system prompt"] --> UseCase
-    Evals["Regression evals"] --> UseCase
+    HTTP["HTTP"] --> API["FastAPI schemas / routes"]
+    API --> CHAT["ChatService / RagService"]
+    CHAT --> PORT["ChatModel port"]
+    PORT --> METRICS["Instrumented boundary"]
+    METRICS --> HF["Local Hugging Face adapter"]
 ```
 
-## Dependency boundaries
+The client supplies chat history but never a system prompt, model, path, revision, device, endpoint, or
+generation configuration. Synchronous Transformers inference crosses an AnyIO thread boundary and a
+process-local semaphore bounds concurrent generations.
 
-- `app/domain` owns stable chat and generation models.
-- `app/ports` defines capabilities the application needs.
-- `app/application` coordinates a use case without importing FastAPI, OpenAI, or Prometheus.
-- `app/adapters` translates between a provider SDK and the port.
-- `app/api` validates untrusted input and maps transport models to the domain.
-- `app/observability` adds request IDs, structured logs, latency, request, and token metrics.
+## Ingestion flow
 
-Dependencies point inward. A provider SDK may know about the domain contract; the domain never knows
-about a provider SDK.
+```mermaid
+flowchart LR
+    INPUT["Upload / URL"] --> VALIDATE["Limits / SSRF / type"]
+    VALIDATE --> PARSER["PDF / text / HTML parser"]
+    PARSER --> NORMALIZE["Unicode / whitespace normalization"]
+    NORMALIZE --> CHUNKER["RecursiveCharacterTextSplitter"]
+    CHUNKER --> EMB["Local embeddings"]
+    EMB --> QDRANT["Qdrant upsert / version replacement"]
+```
 
-## Request lifecycle
+The API passes upload bytes, never an arbitrary server path. URL fetching and HTML parsing are separate
+adapters. Every logical document has a stable UUIDv5 based on source identity; the content checksum is
+the version. Chunk IDs are UUIDv5 values over document ID, version, index, and chunk checksum. Repeating
+identical content returns `unchanged`; changed content is upserted before stale point IDs are deleted.
 
-1. The middleware validates or creates a request ID and starts HTTP timing.
-2. The route validates message roles, lengths, and the final-user-message invariant.
-3. `ChatService` adds the packaged system prompt and invokes the `LLMClient` port.
-4. The instrumented adapter records provider latency, outcome, and reported token usage.
-5. The concrete adapter applies timeouts and bounded retries, then returns a provider-neutral result.
-6. Provider failures become a stable `503` contract without exposing internal details to the client.
+## RAG flow
 
-## Extension recipes
+```mermaid
+flowchart LR
+    QUERY["Validated query"] --> QEMB["Query embedding"]
+    QEMB --> SEARCH["Qdrant search + typed filters"]
+    SEARCH --> BUDGET["Chunk / character / token budget"]
+    BUDGET --> CONTEXT["Escaped untrusted source blocks"]
+    CONTEXT --> MODEL["Local ChatModel"]
+    MODEL --> RESULT["Answer + structured citations"]
+```
 
-### Add another model provider
+RAG is an explicit two-step pipeline, not a hidden high-level chain. Context uses escaped source blocks,
+a server-owned prompt, bounded snippets, and a separate question element. Retrieved instructions cannot
+replace system instructions. Insufficient retrieval produces an explicit no-answer result.
 
-Implement `LLMClient` under `app/adapters/llm`, translate its response into `GenerationResult`, and add
-the provider to `LLMSettings` plus the factory. Keep retries and provider-specific errors inside the
-adapter. Add contract tests using a mock transport rather than a live account.
+## Model lifecycle
 
-### Add RAG
+The composition root is `bootstrap/container.py`; FastAPI lifespan calls `start()` and `aclose()`.
+Models are never loaded on module import or per request.
 
-Define retrieval and document-store ports, implement adapters for the chosen database, and orchestrate
-retrieval in a new application service. Do not make vector storage a global dependency of chat: some
-projects will not need it. Keep source attribution in an explicit domain result instead of embedding it
-only in generated text.
+- `MODEL__LOAD_ON_STARTUP=false`: lazy generator; readiness reports `ready_with_lazy_model`.
+- eager mode: load once, warm up once, then mark ready.
+- an async lock prevents duplicate loads;
+- a semaphore defaults generation concurrency to one;
+- model/tokenizer references are released at shutdown and accelerator caches are cleared when safe;
+- application timeout limits request waiting. A timed-out Torch thread may continue until the underlying
+  inference returns, so semaphore capacity is released by the worker completion callback rather than by
+  timeout alone.
 
-### Add tools or agents
+Embeddings initialize before Qdrant because vector dimension and fingerprint are collection invariants.
 
-Model tool requests and results in the domain first. Put side effects behind narrow ports and enforce
-authorization before execution. Add maximum-step, timeout, and budget limits; record tool traces; and
-include failure and prompt-injection cases in `evals/`.
+## Why one worker is the default
 
-### Add asynchronous jobs
+Each Uvicorn process owns its own Python heap, model, tokenizer, Torch allocator, RAM, and VRAM. Multiple
+workers therefore multiply model memory. The default is one worker; capacity scaling should use explicit
+replicas. Prometheus multiprocess mode is a separate deployment decision.
 
-Keep the use case callable independently of FastAPI, then invoke it from a queue consumer adapter. Pass
-correlation IDs through job metadata and preserve idempotency at the application boundary.
+## Qdrant modes and compatibility
 
-## Production checklist
+- `memory`: isolated tests and evals;
+- `local`: embedded persistent database under `QDRANT__PATH`;
+- `server`: Qdrant HTTP/gRPC with bounded retries for transport/server failures.
 
-- Select a real provider and model through environment variables.
-- Store API keys in a secret manager; never commit `.env`.
-- Set `APP_ENV=production` and usually `DOCS_ENABLED=false`.
-- Put authentication, authorization, rate limiting, and request-size limits at the API gateway or app.
-- Restrict access to `/metrics` and health endpoints as required by the deployment environment.
-- Replace sample eval cases with product-specific golden cases and define an acceptable pass threshold.
-- Add persistence only for data that the product actually needs, with retention and deletion policies.
-- Export logs and Prometheus metrics, and alert on error rate, latency, token use, and eval regressions.
-- Review model-provider data retention and regional processing settings before sending sensitive data.
+Dense retrieval is baseline. The `hybrid` extra adds FastEmbed sparse vectors and RRF fusion; sparse and
+hybrid settings fail clearly when the extra is absent.
 
-Readiness currently means that configuration, the prompt, and the application graph initialized
-successfully. It deliberately does not call the paid model provider on every probe. Add dependency-specific
-checks if your orchestrator needs deeper readiness semantics.
+Collection metadata and schema are checked on startup:
+
+- embedding fingerprint (canonical model reference, revision, normalization, dimension, prefixes);
+- dense dimension and distance;
+- dense/sparse vector names;
+- retrieval mode and sparse model ID.
+
+A mismatch raises `CollectionCompatibilityError`; silently querying vectors created by another embedding
+configuration is forbidden. Migration choices are a new collection, destructive index recreation, or a
+controlled reindex.
+
+## Offline operation
+
+`OFFLINE_MODE=true` sets `HF_HUB_OFFLINE=1`, forces both model adapters to local files only, and disables
+URL ingestion. Chat, retrieval, and RAG over existing Qdrant data continue to work. Model download is a
+separate explicit CLI command and never runs during install, image build, tests, readiness, or CI.
+
+## Prompt injection boundary
+
+Prompts are version-controlled assets. RAG context is escaped and delimited, citations are created from
+retrieval metadata rather than model prose, and the prompt explicitly treats documents as untrusted.
+This reduces risk but does not make arbitrary model output a security decision; downstream actions still
+require authorization and validation.
+
+## Observability boundary
+
+Instrumentation wraps ports and services. Domain/application types do not import Prometheus or structlog.
+Logs and labels contain bounded operational metadata, never prompt, answer, document body, URL, filename,
+credentials, or local model paths.
+
+## Extension points
+
+- implement `ChatModel` for another in-process local runtime after an architectural decision;
+- implement `EmbeddingModel` and provide a collection migration/reindex plan;
+- implement `VectorStore` with equivalent compatibility and idempotency semantics;
+- add parsers behind `DocumentParser` without exposing framework document types;
+- add a fetcher only if it preserves redirect-by-redirect SSRF validation and body limits;
+- add reranking between retrieval and context budgeting.
+
+## Architecture decisions
+
+1. In-process Hugging Face inference instead of a provider API keeps runtime local and credentials-free.
+2. pypdf replaces the deprecated predecessor package and preserves page metadata.
+3. Embedded local Qdrant is the default real-storage mode; memory is for tests.
+4. Fake adapters make CI and evals deterministic and offline-safe.
+5. Install/build never download model weights.
+6. Chat remains stateless and does not depend on Qdrant.
+7. RAG is explicit retrieval followed by explicit generation.
+8. Model configuration is server-owned.
+9. LangChain stays in adapters and never becomes a domain model.
