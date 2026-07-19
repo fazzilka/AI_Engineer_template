@@ -31,12 +31,17 @@ TRANSIENT_PROVIDER_ERRORS = (
 class OpenAICompatibleLLMClient:
     """Adapter for OpenAI and servers exposing the Chat Completions API."""
 
-    def __init__(self, settings: LLMSettings) -> None:
+    def __init__(
+        self,
+        settings: LLMSettings,
+        *,
+        client: AsyncOpenAI | None = None,
+    ) -> None:
         if settings.api_key is None:
             msg = "An API key is required by the OpenAI-compatible adapter"
             raise ValueError(msg)
 
-        self._client = AsyncOpenAI(
+        self._client = client or AsyncOpenAI(
             api_key=settings.api_key.get_secret_value(),
             base_url=settings.base_url,
             timeout=settings.timeout_seconds,
