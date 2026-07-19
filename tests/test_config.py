@@ -24,6 +24,14 @@ def test_remote_provider_requires_api_key() -> None:
         LLMSettings(provider="openai_compatible")
 
 
+def test_empty_environment_secret_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM__PROVIDER", "openai_compatible")
+    monkeypatch.setenv("LLM__API_KEY", "")
+
+    with pytest.raises(ValidationError, match="LLM__API_KEY"):
+        Settings()
+
+
 def test_get_settings_is_cached() -> None:
     get_settings.cache_clear()
 
