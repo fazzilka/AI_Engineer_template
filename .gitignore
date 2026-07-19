@@ -28,3 +28,15 @@ htmlcov/
 # Runtime data
 data/
 logs/
+models/
+qdrant_storage/
+hf_cache/
+.cache/huggingface/
+
+# Local model artifacts
+*.safetensors
+*.bin
+*.gguf
+*.onnx
+*.pt
+*.pth
