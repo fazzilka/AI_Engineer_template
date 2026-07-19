@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 from typing import cast
 
 from fastapi import Request
 
-from app.application.chat import ChatService
+from app.bootstrap.container import ApplicationContainer
 
 
-def get_chat_service(request: Request) -> ChatService:
-    return cast(ChatService, request.app.state.chat_service)
+def get_container(request: Request) -> ApplicationContainer:
+    return cast(ApplicationContainer, request.app.state.container)

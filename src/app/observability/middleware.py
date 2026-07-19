@@ -25,6 +25,7 @@ class RequestObservabilityMiddleware:
 
         method = scope["method"]
         request_id = self._request_id(scope)
+        scope.setdefault("state", {})["request_id"] = request_id
         status_code = 500
         started_at = perf_counter()
         structlog.contextvars.clear_contextvars()
@@ -76,7 +77,7 @@ class RequestObservabilityMiddleware:
         try:
             full_path = str(application.url_path_for(route_name, **path_params))
             local_path = str(route.url_path_for(route_name, **path_params))
-        except (NoMatchFound, TypeError):
+        except NoMatchFound, TypeError:
             return str(route_path)
 
         prefix = full_path.removesuffix(local_path)

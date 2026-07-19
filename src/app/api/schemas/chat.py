@@ -28,11 +28,31 @@ class ChatRequest(BaseModel):
         return self
 
 
+class TokenUsageResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    estimated: bool
+
+    @classmethod
+    def from_domain(cls, usage: TokenUsage) -> Self:
+        return cls(
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            total_tokens=usage.total_tokens,
+            estimated=usage.estimated,
+        )
+
+
 class ChatResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     content: str
     model: str
     finish_reason: str | None
-    usage: TokenUsage
+    usage: TokenUsageResponse
 
     @classmethod
     def from_result(cls, result: GenerationResult) -> Self:
@@ -40,9 +60,5 @@ class ChatResponse(BaseModel):
             content=result.content,
             model=result.model,
             finish_reason=result.finish_reason,
-            usage=result.usage,
+            usage=TokenUsageResponse.from_domain(result.usage),
         )
-
-
-class HealthResponse(BaseModel):
-    status: str

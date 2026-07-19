@@ -4,16 +4,26 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.config import LLMSettings, Settings
+from app.config import (
+    ApiSettings,
+    AppSettings,
+    ModelSettings,
+    QdrantMode,
+    QdrantSettings,
+    Settings,
+    WebFetchSettings,
+)
 from app.main import create_app
 
 
 @pytest.fixture
 def test_settings() -> Settings:
     return Settings(
-        app_env="test",
-        docs_enabled=False,
-        llm=LLMSettings(provider="fake", model="test-model"),
+        app=AppSettings(environment="test", allow_fake_backends=True),
+        api=ApiSettings(docs_enabled=False),
+        model=ModelSettings(alias="test-model"),
+        qdrant=QdrantSettings(mode=QdrantMode.MEMORY),
+        web=WebFetchSettings(enabled=False),
     )
 
 

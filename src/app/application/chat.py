@@ -1,12 +1,12 @@
 from collections.abc import Sequence
 
 from app.domain.chat import ChatMessage, GenerationResult, MessageRole
-from app.ports.llm import LLMClient
+from app.ports.llm import ChatModel
 
 
 class ChatService:
-    def __init__(self, *, llm: LLMClient, system_prompt: str) -> None:
-        self._llm = llm
+    def __init__(self, *, model: ChatModel, system_prompt: str) -> None:
+        self._model = model
         self._system_prompt = system_prompt
 
     async def reply(self, messages: Sequence[ChatMessage]) -> GenerationResult:
@@ -17,4 +17,4 @@ class ChatService:
             msg = "The final chat message must have the user role"
             raise ValueError(msg)
 
-        return await self._llm.generate(messages=messages, system_prompt=self._system_prompt)
+        return await self._model.generate(messages=messages, system_prompt=self._system_prompt)

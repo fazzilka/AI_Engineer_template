@@ -1,6 +1,5 @@
+from dataclasses import dataclass
 from enum import StrEnum
-
-from pydantic import BaseModel, ConfigDict, Field
 
 
 class MessageRole(StrEnum):
@@ -8,24 +7,52 @@ class MessageRole(StrEnum):
     ASSISTANT = "assistant"
 
 
-class ChatMessage(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+@dataclass(frozen=True, slots=True)
+class ChatMessage:
     role: MessageRole
-    content: str = Field(min_length=1, max_length=32_000)
+    content: str
+
+    def __post_init__(self) -> None:
+        if not self.content or len(self.content) > 32_000:
+            msg = "Chat message content must contain between 1 and 32000 characters"
+            raise ValueError(msg)
 
 
-class TokenUsage(BaseModel):
-    model_config = ConfigDict(frozen=True)
+@dataclass(frozen=True, slots=True)
+class TokenUsage:
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    estimated: bool = False
 
-    input_tokens: int = Field(default=0, ge=0)
-    output_tokens: int = Field(default=0, ge=0)
+    def __post_init__(self) -> None:
+        values = (self.input_tokens, self.output_tokens, self.total_tokens)
+        if any(value is not None and value < 0 for value in values):
+            msg = "Token counts cannot be negative"
+            raise ValueError(msg)
+        if (
+            self.total_tokens is None
+            and self.input_tokens is not None
+            and self.output_tokens is not None
+        ):
+            object.__setattr__(
+                self,
+                "total_tokens",
+                self.input_tokens + self.output_tokens,
+            )
 
 
-class GenerationResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+@dataclass(frozen=True, slots=True)
+class GenerationResult:
     content: str
     model: str
     finish_reason: str | None = None
-    usage: TokenUsage = Field(default_factory=TokenUsage)
+    usage: TokenUsage = TokenUsage()
+
+    def __post_init__(self) -> None:
+        if not self.content:
+            msg = "Generation content cannot be empty"
+            raise ValueError(msg)
+        if not self.model:
+            msg = "Model alias cannot be empty"
+            raise ValueError(msg)

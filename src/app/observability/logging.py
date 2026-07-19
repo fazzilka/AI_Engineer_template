@@ -8,10 +8,10 @@ from app.config import Settings
 def configure_logging(settings: Settings) -> None:
     """Configure structured logs once at application startup."""
 
-    log_level = getattr(logging, settings.log_level)
+    log_level = getattr(logging, settings.observability.log_level)
     renderer = (
         structlog.dev.ConsoleRenderer()
-        if settings.app_env == "local"
+        if settings.app.environment == "local"
         else structlog.processors.JSONRenderer()
     )
 

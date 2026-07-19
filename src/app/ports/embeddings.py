@@ -1,0 +1,16 @@
+from collections.abc import Sequence
+from typing import Protocol
+
+from app.domain.generation import EmbeddingStatus
+
+
+class EmbeddingModel(Protocol):
+    async def initialize(self) -> None: ...
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
+
+    async def embed_query(self, text: str) -> list[float]: ...
+
+    def status(self) -> EmbeddingStatus: ...
+
+    async def aclose(self) -> None: ...

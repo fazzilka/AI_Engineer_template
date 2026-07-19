@@ -4,27 +4,58 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-engineer-template"
-version = "0.1.0"
-description = "Production-ready foundation for AI engineering projects"
+version = "0.2.0"
+description = "Production-oriented foundation for fully local AI and RAG projects"
 readme = "README.md"
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.14,<3.15"
 dependencies = [
+    "accelerate>=1.14.0",
+    "aiofiles>=25.1.0",
+    "beautifulsoup4>=4.15.0",
     "fastapi>=0.116.1",
-    "openai>=1.97.1",
+    "httpx>=0.28.1",
+    "huggingface-hub>=1.24.0",
+    "langchain-core>=1.4.9",
+    "langchain-huggingface>=1.2.2",
+    "langchain-qdrant>=1.1.0",
+    "langchain-text-splitters>=1.1.2",
+    "lxml>=6.1.1",
+    "orjson>=3.11.9",
     "prometheus-client>=0.22.1",
     "pydantic-settings>=2.10.1",
+    "pypdf>=6.14.2",
+    "python-multipart>=0.0.32",
+    "qdrant-client>=1.18.0",
+    "safetensors>=0.8.0",
+    "sentence-transformers>=5.6.0",
     "structlog>=25.4.0",
     "tenacity>=9.1.2",
+    "torch>=2.13.0",
+    "transformers>=5.14.1",
     "uvicorn[standard]>=0.35.0",
 ]
+
+[project.optional-dependencies]
+hybrid = [
+    "fastembed>=0.8.0",
+]
+
+[project.scripts]
+ai-template-download-models = "app.cli.download_models:main"
+ai-template-ingest = "app.cli.ingest:main"
+ai-template-model-smoke = "app.cli.model_smoke:main"
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
     "mypy>=1.17.0",
+    "pip-audit>=2.10.1",
+    "pre-commit>=4.6.0",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.2.1",
+    "pytest-timeout>=2.4.0",
+    "respx>=0.23.1",
     "ruff>=0.12.5",
 ]
 
@@ -35,18 +66,23 @@ required-version = ">=0.11.0,<0.12"
 packages = ["src/app"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "evals"]
 
 [tool.ruff.lint]
-select = ["ASYNC", "B", "E", "F", "I", "RUF", "SIM", "UP"]
+select = ["ANN", "ASYNC", "B", "C4", "DTZ", "E", "F", "FA", "I", "PERF", "PIE", "PTH", "RET", "RSE", "RUF", "S", "SIM", "T20", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"evals/**" = ["T201"]
+"src/app/cli/**" = ["T201"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 files = ["src", "tests", "evals"]
 plugins = ["pydantic.mypy"]
@@ -55,6 +91,14 @@ plugins = ["pydantic.mypy"]
 addopts = "--strict-config --strict-markers -ra"
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "unit: isolated deterministic unit tests",
+    "integration: in-process component integration tests",
+    "model: opt-in tests requiring a pre-downloaded local model",
+    "network: opt-in tests requiring network access",
+    "slow: opt-in resource-intensive tests",
+]
+timeout = 30
 
 [tool.coverage.run]
 branch = true
