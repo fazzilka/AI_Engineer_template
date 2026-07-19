@@ -1,18 +1,19 @@
-## Summary
+## Краткое описание
 
-Describe the problem and the solution boundary.
+Опишите проблему, решение и затронутую архитектурную границу.
 
-## Verification
+## Проверка
 
-- [ ] `make check`
-- [ ] Documentation updated when configuration or contracts changed
-- [ ] No secrets or generated local files committed
+- [ ] Выполнена команда `make check`
+- [ ] Документация обновлена при изменении конфигурации или контрактов
+- [ ] В репозиторий не добавлены секреты, веса моделей или другие локальные артефакты
 
-## AI behavior changes
+## Изменения поведения модели
 
-- [ ] Not applicable
-- [ ] Prompt/model/retrieval changes include updated eval cases and results
+- [ ] Не применимо
+- [ ] Изменения промпта, модели или поиска сопровождаются новыми оценочными сценариями и результатами
+- [ ] Профиль Qwen 3.5 (14B) / Q4_K_M и карточка модели остаются актуальными
 
-## Breaking changes
+## Несовместимые изменения
 
-List migration steps, or write `None`.
+Перечислите шаги миграции или укажите «Нет».
