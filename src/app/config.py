@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     app_env: Literal["local", "test", "staging", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     api_prefix: str = "/api/v1"
+    docs_enabled: bool = True
     llm: LLMSettings = Field(default_factory=LLMSettings)
 
 
