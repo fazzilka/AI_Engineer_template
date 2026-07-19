@@ -1,36 +1,46 @@
-# Extension recipes
+# Расширение проекта
 
-These capabilities are intentionally optional.
+Ниже перечислены необязательные возможности, которые добавляются через существующие порты.
 
-## OCR for scanned PDF
+## OCR для сканированных PDF
 
-Add an OCR adapter behind `DocumentParser` or a dedicated narrow port. Keep OCR binaries and language
-packs in a separate image/profile, enforce page/time limits, and add malformed/scanned PDF tests. The
-baseline returns `document_contains_no_extractable_text` when no text layer exists.
+Добавьте OCR-адаптер за портом `DocumentParser` или отдельным узким портом. Бинарные файлы OCR и
+языковые пакеты следует размещать в отдельном образе или профиле. Ограничьте количество страниц и
+время обработки, добавьте тесты повреждённых и сканированных PDF. Базовая реализация возвращает
+`document_contains_no_extractable_text`, если текстовый слой отсутствует.
 
-## Reranking
+## Повторное ранжирование
 
-Add a `Reranker` port between Qdrant retrieval and context budgeting. Keep it local, bounded, and covered
-by retrieval evals. Do not replace source scores or citations without documenting the semantics.
+Добавьте порт `Reranker` между поиском Qdrant и ограничением контекста. Ранжировщик должен работать
+локально, иметь ограничения ресурсов и проверяться поисковыми оценками. Изменение смысла исходных
+оценок релевантности и цитат необходимо описать в документации.
 
-## Authentication and authorization
+## Аутентификация и авторизация
 
-Authenticate at an API gateway or FastAPI dependency. Apply document-level authorization before search
-and deletion; never accept raw Qdrant filter DSL from clients.
+Выполняйте аутентификацию на API-шлюзе или через зависимость FastAPI. Проверяйте доступ к документам до
+поиска и удаления. Никогда не принимайте от клиента необработанный язык фильтров Qdrant.
 
-## Background ingestion
+## Фоновая индексация
 
-Invoke existing ingestion services from a queue adapter. Preserve document identity, idempotency,
-request/correlation IDs, timeouts, and deletion semantics. Redis, PostgreSQL, Celery, and other job
-systems are intentionally absent from the baseline.
+Вызывайте существующие сервисы индексации через адаптер очереди. Сохраняйте идентичность документа,
+идемпотентность, идентификаторы корреляции, тайм-ауты и семантику удаления. Redis, PostgreSQL, Celery и
+другие очереди намеренно не входят в базовую поставку.
 
-## Alternative local runtimes
+## Локальный GGUF-рантайм для Qwen
 
-An alternative runtime requires an architectural decision, an implementation of `ChatModel`, lifecycle
-and thread-boundary tests, offline behavior, token usage semantics, and model-license documentation.
-External model APIs are not a drop-in extension.
+Для основного профиля **Qwen 3.5 (14B)** с квантованием **Q4_K_M** реализуйте порт `ChatModel` через
+совместимый GGUF-рантайм, например llama.cpp. Адаптер должен поддерживать жизненный цикл, ограничение
+параллелизма, тайм-ауты, шаблон диалога, подсчёт токенов и автономный режим. Добавьте контрактные тесты
+и отдельную проверку настоящего модельного файла.
 
-## Multiple replicas
+## Другие локальные рантаймы
 
-Use one model-owning worker per replica and distribute requests at the service layer. Use Qdrant server
-mode for shared retrieval. Plan Prometheus aggregation, graceful rollout memory spikes, and GPU affinity.
+Новый рантайм требует архитектурного решения, реализации `ChatModel`, тестов жизненного цикла и
+границы потоков, определённой семантики токенов и проверки лицензии. Внешние модельные API не считаются
+эквивалентной заменой локального адаптера.
+
+## Несколько реплик
+
+Используйте один рабочий процесс с моделью на каждую реплику и распределяйте запросы на уровне сервиса.
+Для общего поиска включите серверный режим Qdrant. Заранее спланируйте агрегацию Prometheus, всплеск
+потребления памяти при обновлении и привязку к GPU.

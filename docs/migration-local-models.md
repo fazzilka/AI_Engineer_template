@@ -1,8 +1,9 @@
-# Migration to local models
+# Переход на локальную модель
 
-This revision intentionally removes the previous OpenAI-compatible runtime and the `openai` SDK.
+Текущая версия удаляет OpenAI-совместимый рантайм и пакет `openai`. Целевой профиль проекта —
+**Qwen 3.5 (14B)** с рекомендуемым квантованием **Q4_K_M**.
 
-Before:
+Раньше конфигурация выглядела так:
 
 ```dotenv
 LLM__PROVIDER=openai_compatible
@@ -10,7 +11,7 @@ LLM__API_KEY=...
 LLM__BASE_URL=...
 ```
 
-After:
+Локальная конфигурация базового Transformers-адаптера:
 
 ```dotenv
 MODEL__BACKEND=huggingface
@@ -18,17 +19,25 @@ MODEL__SOURCE=filesystem
 MODEL__PATH=./models/generator
 MODEL__LOCAL_FILES_ONLY=true
 MODEL__TRUST_REMOTE_CODE=false
+MODEL__ALIAS=qwen3.5-14b-q4_k_m
 ```
 
-Migration steps:
+Для рабочего GGUF-профиля Q4_K_M реализация `ChatModel` должна использовать совместимый локальный
+рантайм. Путь к модельному файлу, число слоёв на ускорителе и размер контекста остаются серверными
+параметрами и никогда не принимаются через HTTP.
 
-1. Remove old provider credentials from deployment secret stores after verifying no other service uses
-   them.
-2. Choose and license generator/embedding models; pin immutable revisions.
-3. Run the explicit download command outside normal install/CI.
-4. Create a new Qdrant collection or reindex with the new embedding fingerprint.
-5. Run `make check`, `make eval`, and the opt-in local model smoke.
-6. Re-size CPU/RAM/GPU resources: model memory now belongs to the application process.
+## Порядок миграции
 
-The `/api/v1/chat` messages contract remains stateless and substantially compatible. Provider selection,
-credentials, base URL, and remote retry settings no longer exist.
+1. Удалите старые ключи поставщика из хранилища секретов, убедившись, что они не нужны другим сервисам.
+2. Зарегистрируйте источник, лицензию и контрольную сумму артефакта Qwen 3.5 (14B) Q4_K_M.
+3. Разместите файл `qwen3.5-14b-q4_k_m.gguf` в защищённом локальном хранилище вне Git.
+4. Подключите GGUF-совместимый адаптер через порт `ChatModel` или подготовьте Transformers-чекпойнт
+   для существующего `HuggingFaceChatModel`.
+5. Зафиксируйте неизменяемую ревизию модели эмбеддингов.
+6. Создайте новую коллекцию Qdrant или переиндексируйте данные с новым отпечатком эмбеддингов.
+7. Выполните `make check`, `make eval` и отдельную проверку настоящей локальной модели.
+8. Повторно оцените потребление CPU, RAM и GPU: память модели теперь относится к процессу приложения.
+
+Контракт сообщений `/api/v1/chat` остаётся без сохранения состояния и в основном совместим с прежней
+версией. Выбор поставщика, внешний базовый URL, ключ API и параметры удалённых повторов больше не
+поддерживаются.

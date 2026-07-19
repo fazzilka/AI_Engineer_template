@@ -1,143 +1,160 @@
-# Architecture
+# Архитектура
 
-The template follows ports and adapters. Dependencies point inward:
+Проект использует подход «порты и адаптеры». Зависимости направлены к центру:
 
 ```text
-API / CLI → Application → Ports → Domain
+API / CLI → Приложение → Порты → Домен
                          ↑
-                      Adapters
+                      Адаптеры
 ```
 
-`domain/` contains immutable dataclasses, enums, deterministic identity rules, and typed errors. It
-does not import transport, model, retrieval, logging, or metrics frameworks. `application/` coordinates
-use cases through ports. LangChain and third-party SDK types are translated only inside adapters.
+`domain/` содержит неизменяемые классы данных, перечисления, правила формирования идентификаторов и
+типизированные ошибки. Этот слой не импортирует транспортные, модельные, поисковые или
+наблюдаемые фреймворки. `application/` координирует сценарии через порты. Типы LangChain и сторонних
+SDK преобразуются только внутри адаптеров.
 
-## Request flow
+## Модельный профиль
+
+Для основного развёртывания выбран профиль **Qwen 3.5 (14B)**.
+
+**Рекомендуемое квантование:** **Q4_K_M**.
+
+Квантованный артефакт хранится вне Git в формате GGUF. Архитектура не привязывает прикладной слой к
+конкретному рантайму: Qwen подключается через порт `ChatModel`. Это позволяет использовать
+llama.cpp-совместимый адаптер для Q4_K_M, сохраняя существующий Transformers-адаптер для локальных
+чекпойнтов в формате Hugging Face. Подробности приведены в [карточке модели](model-profile.md).
+
+## Обработка запроса
 
 ```mermaid
 flowchart LR
-    HTTP["HTTP"] --> API["FastAPI schemas / routes"]
+    HTTP["HTTP"] --> API["Схемы и маршруты FastAPI"]
     API --> CHAT["ChatService / RagService"]
-    CHAT --> PORT["ChatModel port"]
-    PORT --> METRICS["Instrumented boundary"]
-    METRICS --> HF["Local Hugging Face adapter"]
+    CHAT --> PORT["Порт ChatModel"]
+    PORT --> METRICS["Инструментированная граница"]
+    METRICS --> QWEN["Qwen 3.5 (14B), Q4_K_M"]
 ```
 
-The client supplies chat history but never a system prompt, model, path, revision, device, endpoint, or
-generation configuration. Synchronous Transformers inference crosses an AnyIO thread boundary and a
-process-local semaphore bounds concurrent generations.
+Клиент передаёт историю диалога, но не может передать системный промпт, модель, путь, ревизию,
+устройство, адрес рантайма или параметры генерации. Синхронный инференс выполняется за границей потока
+AnyIO, а локальный семафор ограничивает число одновременных генераций.
 
-## Ingestion flow
+## Индексация документов
 
 ```mermaid
 flowchart LR
-    INPUT["Upload / URL"] --> VALIDATE["Limits / SSRF / type"]
-    VALIDATE --> PARSER["PDF / text / HTML parser"]
-    PARSER --> NORMALIZE["Unicode / whitespace normalization"]
+    INPUT["Файл / URL"] --> VALIDATE["Лимиты / SSRF / тип"]
+    VALIDATE --> PARSER["Парсер PDF / текста / HTML"]
+    PARSER --> NORMALIZE["Нормализация Unicode и пробелов"]
     NORMALIZE --> CHUNKER["RecursiveCharacterTextSplitter"]
-    CHUNKER --> EMB["Local embeddings"]
-    EMB --> QDRANT["Qdrant upsert / version replacement"]
+    CHUNKER --> EMB["Локальные эмбеддинги"]
+    EMB --> QDRANT["Обновление Qdrant и замена версии"]
 ```
 
-The API passes upload bytes, never an arbitrary server path. URL fetching and HTML parsing are separate
-adapters. Every logical document has a stable UUIDv5 based on source identity; the content checksum is
-the version. Chunk IDs are UUIDv5 values over document ID, version, index, and chunk checksum. Repeating
-identical content returns `unchanged`; changed content is upserted before stale point IDs are deleted.
+API передаёт байты загруженного файла и никогда не принимает произвольный серверный путь. Загрузка URL
+и разбор HTML реализованы отдельными адаптерами. Логический документ получает стабильный UUIDv5 по
+источнику, а контрольная сумма содержимого становится версией. UUIDv5 фрагмента вычисляется по
+идентификатору документа, версии, порядковому номеру и контрольной сумме фрагмента. Повторная загрузка
+того же содержимого возвращает `unchanged`; новая версия записывается до удаления устаревших точек.
 
-## RAG flow
+## Обработка RAG-запроса
 
 ```mermaid
 flowchart LR
-    QUERY["Validated query"] --> QEMB["Query embedding"]
-    QEMB --> SEARCH["Qdrant search + typed filters"]
-    SEARCH --> BUDGET["Chunk / character / token budget"]
-    BUDGET --> CONTEXT["Escaped untrusted source blocks"]
-    CONTEXT --> MODEL["Local ChatModel"]
-    MODEL --> RESULT["Answer + structured citations"]
+    QUERY["Проверенный запрос"] --> QEMB["Эмбеддинг запроса"]
+    QEMB --> SEARCH["Поиск Qdrant и типизированные фильтры"]
+    SEARCH --> BUDGET["Лимит фрагментов, символов и токенов"]
+    BUDGET --> CONTEXT["Изолированные недоверенные источники"]
+    CONTEXT --> MODEL["Qwen 3.5 (14B)"]
+    MODEL --> RESULT["Ответ и структурированные ссылки"]
 ```
 
-RAG is an explicit two-step pipeline, not a hidden high-level chain. Context uses escaped source blocks,
-a server-owned prompt, bounded snippets, and a separate question element. Retrieved instructions cannot
-replace system instructions. Insufficient retrieval produces an explicit no-answer result.
+RAG реализован как явный конвейер из поиска и генерации, а не как скрытая высокоуровневая цепочка.
+Контекст состоит из экранированных блоков источников, серверного промпта и отдельного вопроса.
+Инструкции из документов не могут заменить системные инструкции. Если релевантного контекста
+недостаточно, сервис возвращает явный ответ об отсутствии данных.
 
-## Model lifecycle
+## Жизненный цикл модели
 
-The composition root is `bootstrap/container.py`; FastAPI lifespan calls `start()` and `aclose()`.
-Models are never loaded on module import or per request.
+Корень композиции находится в `bootstrap/container.py`; FastAPI lifespan вызывает `start()` и
+`aclose()`. Модель не загружается при импорте модуля или для каждого запроса.
 
-- `MODEL__LOAD_ON_STARTUP=false`: lazy generator; readiness reports `ready_with_lazy_model`.
-- eager mode: load once, warm up once, then mark ready.
-- an async lock prevents duplicate loads;
-- a semaphore defaults generation concurrency to one;
-- model/tokenizer references are released at shutdown and accelerator caches are cleared when safe;
-- application timeout limits request waiting. A timed-out Torch thread may continue until the underlying
-  inference returns, so semaphore capacity is released by the worker completion callback rather than by
-  timeout alone.
+- `MODEL__LOAD_ON_STARTUP=false` включает ленивую загрузку;
+- при ранней загрузке модель загружается и прогревается один раз;
+- асинхронная блокировка предотвращает повторную параллельную загрузку;
+- семафор по умолчанию разрешает одну генерацию одновременно;
+- при завершении освобождаются ссылки на модель и токенизатор, а кэши ускорителя очищаются;
+- прикладной тайм-аут ограничивает ожидание запроса.
 
-Embeddings initialize before Qdrant because vector dimension and fingerprint are collection invariants.
+Поток вычисления может продолжить работу после тайм-аута, если базовый рантайм не поддерживает
+прерывание. Поэтому место в семафоре освобождается только после фактического завершения рабочего потока.
 
-## Why one worker is the default
+Эмбеддинги инициализируются раньше Qdrant, поскольку размерность и отпечаток модели входят в инварианты
+коллекции.
 
-Each Uvicorn process owns its own Python heap, model, tokenizer, Torch allocator, RAM, and VRAM. Multiple
-workers therefore multiply model memory. The default is one worker; capacity scaling should use explicit
-replicas. Prometheus multiprocess mode is a separate deployment decision.
+## Почему по умолчанию один рабочий процесс
 
-## Qdrant modes and compatibility
+Каждый процесс Uvicorn владеет отдельной моделью, токенизатором и памятью ускорителя. Несколько процессов
+умножают потребление RAM и VRAM, что особенно заметно для профиля 14B. Поэтому по умолчанию используется
+один процесс, а масштабирование выполняется отдельными репликами.
 
-- `memory`: isolated tests and evals;
-- `local`: embedded persistent database under `QDRANT__PATH`;
-- `server`: Qdrant HTTP/gRPC with bounded retries for transport/server failures.
+## Режимы Qdrant и совместимость
 
-Dense retrieval is baseline. The `hybrid` extra adds FastEmbed sparse vectors and RRF fusion; sparse and
-hybrid settings fail clearly when the extra is absent.
+- `memory` — изолированные тесты и оценки качества;
+- `local` — постоянная встроенная база в `QDRANT__PATH`;
+- `server` — Qdrant по HTTP или gRPC с ограниченными повторами запросов.
 
-Collection metadata and schema are checked on startup:
+Плотный поиск включён в базовую установку. Дополнение `hybrid` добавляет разреженные векторы FastEmbed
+и слияние RRF. При отсутствии дополнения разреженный и гибридный режимы завершаются понятной ошибкой.
 
-- embedding fingerprint (canonical model reference, revision, normalization, dimension, prefixes);
-- dense dimension and distance;
-- dense/sparse vector names;
-- retrieval mode and sparse model ID.
+При запуске проверяются:
 
-A mismatch raises `CollectionCompatibilityError`; silently querying vectors created by another embedding
-configuration is forbidden. Migration choices are a new collection, destructive index recreation, or a
-controlled reindex.
+- отпечаток эмбеддингов: источник, ревизия, нормализация, размерность и префиксы;
+- размерность и метрика плотного вектора;
+- имена плотного и разреженного векторов;
+- режим поиска и идентификатор разреженной модели.
 
-## Offline operation
+Несовместимость приводит к `CollectionCompatibilityError`. Допустимые варианты миграции: новая
+коллекция, контролируемое пересоздание индекса или полная переиндексация.
 
-`OFFLINE_MODE=true` sets `HF_HUB_OFFLINE=1`, forces both model adapters to local files only, and disables
-URL ingestion. Chat, retrieval, and RAG over existing Qdrant data continue to work. Model download is a
-separate explicit CLI command and never runs during install, image build, tests, readiness, or CI.
+## Автономная работа
 
-## Prompt injection boundary
+`OFFLINE_MODE=true` устанавливает `HF_HUB_OFFLINE=1`, запрещает сетевую загрузку моделей и отключает
+индексацию URL. Диалог, поиск и RAG по уже сохранённым данным продолжают работать. Загрузка весов всегда
+выполняется отдельной явной командой и не запускается при установке, сборке образа, тестировании,
+проверке готовности или в CI.
 
-Prompts are version-controlled assets. RAG context is escaped and delimited, citations are created from
-retrieval metadata rather than model prose, and the prompt explicitly treats documents as untrusted.
-This reduces risk but does not make arbitrary model output a security decision; downstream actions still
-require authorization and validation.
+## Граница защиты от внедрения инструкций
 
-## Observability boundary
+Промпты хранятся как версионируемые ресурсы. RAG-контекст экранируется и отделяется, а ссылки на
+источники создаются из поисковых метаданных, а не из текста модели. Эти меры снижают риск, но ответ
+Qwen не является решением об авторизации. Любое действие с побочными эффектами требует отдельной
+проверки прав и входных данных.
 
-Instrumentation wraps ports and services. Domain/application types do not import Prometheus or structlog.
-Logs and labels contain bounded operational metadata, never prompt, answer, document body, URL, filename,
-credentials, or local model paths.
+## Граница наблюдаемости
 
-## Extension points
+Инструментирование оборачивает порты и сервисы. Домен и приложение не импортируют Prometheus или
+structlog. Журналы и метки содержат только ограниченные операционные данные и не включают промпты,
+ответы, документы, URL, имена файлов, учётные данные или локальные пути модели.
 
-- implement `ChatModel` for another in-process local runtime after an architectural decision;
-- implement `EmbeddingModel` and provide a collection migration/reindex plan;
-- implement `VectorStore` with equivalent compatibility and idempotency semantics;
-- add parsers behind `DocumentParser` without exposing framework document types;
-- add a fetcher only if it preserves redirect-by-redirect SSRF validation and body limits;
-- add reranking between retrieval and context budgeting.
+## Точки расширения
 
-## Architecture decisions
+- реализация `ChatModel` для другого локального рантайма;
+- реализация `EmbeddingModel` с планом миграции и переиндексации;
+- реализация `VectorStore` с теми же гарантиями совместимости и идемпотентности;
+- новые парсеры за портом `DocumentParser`;
+- новый загрузчик URL с повторной SSRF-проверкой каждого перенаправления;
+- повторное ранжирование между поиском и ограничением контекста.
 
-1. In-process Hugging Face inference instead of a provider API keeps runtime local and credentials-free.
-2. pypdf replaces the deprecated predecessor package and preserves page metadata.
-3. Embedded local Qdrant is the default real-storage mode; memory is for tests.
-4. Fake adapters make CI and evals deterministic and offline-safe.
-5. Install/build never download model weights.
-6. Chat remains stateless and does not depend on Qdrant.
-7. RAG is explicit retrieval followed by explicit generation.
-8. Model configuration is server-owned.
-9. LangChain stays in adapters and never becomes a domain model.
+## Принятые решения
+
+1. Модель Qwen 3.5 (14B) работает локально и не требует внешнего API.
+2. Q4_K_M используется как рекомендуемый профиль GGUF для локального развёртывания.
+3. Прикладной слой зависит от `ChatModel`, а не от конкретного модельного рантайма.
+4. pypdf используется для разбора PDF с сохранением номеров страниц.
+5. Локальный Qdrant является основным встроенным хранилищем, режим памяти предназначен для тестов.
+6. Тестовые адаптеры обеспечивают детерминированные CI и оценки без сети.
+7. Установка и сборка никогда не скачивают веса моделей.
+8. Диалог не зависит от Qdrant, а RAG явно разделяет поиск и генерацию.
+9. Конфигурация модели принадлежит серверу.
+10. Типы LangChain не выходят за границы адаптеров.
