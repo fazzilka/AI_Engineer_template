@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import structlog
 from starlette.datastructures import Headers, MutableHeaders
+from starlette.routing import NoMatchFound
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.observability.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
@@ -43,7 +44,7 @@ class RequestObservabilityMiddleware:
             raise
         finally:
             duration = perf_counter() - started_at
-            route = getattr(scope.get("route"), "path", "unmatched")
+            route = self._route_template(scope)
             HTTP_REQUESTS.labels(method=method, route=route, status=str(status_code)).inc()
             HTTP_REQUEST_DURATION.labels(method=method, route=route).observe(duration)
             self._logger.info(
@@ -61,3 +62,22 @@ class RequestObservabilityMiddleware:
         if candidate and REQUEST_ID_PATTERN.fullmatch(candidate):
             return candidate
         return uuid4().hex
+
+    @staticmethod
+    def _route_template(scope: Scope) -> str:
+        route = scope.get("route")
+        route_path = getattr(route, "path", None)
+        route_name = getattr(route, "name", None)
+        application = scope.get("app")
+        if route is None or route_path is None or route_name is None or application is None:
+            return "unmatched"
+
+        path_params = scope.get("path_params", {})
+        try:
+            full_path = str(application.url_path_for(route_name, **path_params))
+            local_path = str(route.url_path_for(route_name, **path_params))
+        except (NoMatchFound, TypeError):
+            return str(route_path)
+
+        prefix = full_path.removesuffix(local_path)
+        return f"{prefix}{route_path}"
