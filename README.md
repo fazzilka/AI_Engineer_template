@@ -1,62 +1,81 @@
-# Local AI Engineer Template
+# Локальный AI/RAG-сервис на Qwen 3.5 (14B)
 
 [![CI](https://github.com/fazzilka/AI_Engineer_template/actions/workflows/ci.yml/badge.svg)](https://github.com/fazzilka/AI_Engineer_template/actions/workflows/ci.yml)
 
-Production-oriented foundation для полностью локальных AI API и RAG-сервисов на Python 3.14. Шаблон
-запускает генеративную модель и embeddings внутри процесса, хранит vectors локально в Qdrant и после
-предварительного скачивания моделей способен работать без model API, ключей и сети.
+Производственная основа для полностью локальных AI API и RAG-сервисов на Python 3.14. Проект
+запускает генеративную модель и эмбеддинги в локальной инфраструктуре, хранит векторы в Qdrant и
+после предварительной подготовки весов работает без внешних API, ключей доступа и подключения к сети.
 
-Это прочная основа для адаптации, а не обещание готовности к любому production-окружению без
-дополнительных authentication, capacity planning, model validation и deployment controls.
+## Выбранная модель
 
-## Для каких проектов подходит
+В основном профиле проекта используется **Qwen 3.5 (14B)**.
 
-- внутренние knowledge assistants и локальные copilots;
-- RAG по PDF, Markdown, plain text и HTML URL;
-- изолированные или privacy-sensitive deployments;
-- прототипы и production-oriented сервисы с заменяемыми adapters;
-- multilingual retrieval с подходящей sentence-transformers моделью.
+**Рекомендуемое квантование:** **Q4_K_M**.
+
+| Параметр | Значение |
+| --- | --- |
+| Семейство | Qwen 3.5 |
+| Размер | 14B параметров |
+| Формат локального артефакта | GGUF |
+| Квантование | Q4_K_M |
+| Режим работы | полностью локальный |
+| Основные задачи | диалог, RAG, ответы по внутренней базе знаний |
+
+Профиль Q4_K_M выбран как практичный баланс между качеством ответов, размером файла и требованиями
+к памяти. Подробности, правила именования артефакта и границы совместимости приведены в
+[карточке модели](docs/model-profile.md).
+
+## Для каких задач подходит проект
+
+- внутренние ассистенты и корпоративные базы знаний;
+- RAG по PDF, Markdown, обычному тексту и HTML-страницам;
+- изолированные контуры и проекты с повышенными требованиями к конфиденциальности;
+- локальные прототипы и производственные сервисы с заменяемыми адаптерами;
+- многоязычный поиск с подходящей моделью эмбеддингов.
 
 ## Возможности
 
-- FastAPI API: chat, upload, URL ingestion, retrieval, RAG, delete, status, health и metrics;
-- in-process inference через Transformers, PyTorch и `HuggingFacePipeline`;
-- локальные embeddings через `HuggingFaceEmbeddings`;
-- Qdrant memory/local/server modes, dense retrieval и optional FastEmbed hybrid retrieval;
-- deterministic fake model и fake embeddings для quick start, tests, CI и evals;
-- PDF parsing через pypdf, безопасный HTTPX fetcher и SSRF protection;
-- deterministic chunk IDs, checksums, idempotent ingestion и version replacement;
-- structured citations и bounded context;
-- structlog, Prometheus, request ID и component readiness;
-- strict mypy, Ruff, pytest branch coverage ≥90%, offline evals и dependency audit;
-- hardened Docker/Compose без автоматического скачивания weights.
+- FastAPI API для диалога, загрузки документов, поиска, RAG, удаления и проверки состояния;
+- локальная генерация через порт `ChatModel`;
+- базовый адаптер Transformers/PyTorch через `HuggingFacePipeline`;
+- локальные эмбеддинги через `HuggingFaceEmbeddings`;
+- Qdrant в режимах `memory`, `local` и `server`;
+- плотный поиск и необязательный гибридный поиск через FastEmbed;
+- детерминированные тестовые модели для тестов, CI и оценок качества;
+- разбор PDF через pypdf и безопасная загрузка URL с защитой от SSRF;
+- стабильные идентификаторы фрагментов, контрольные суммы и идемпотентная индексация;
+- структурированные ссылки на источники и ограничение объёма контекста;
+- структурированные журналы, метрики Prometheus и идентификаторы запросов;
+- строгая проверка типов, Ruff, покрытие ветвей не ниже 90% и автономные оценки качества;
+- защищённые Docker-образы без автоматического включения весов модели.
 
 ## Архитектура
 
 ```mermaid
 flowchart LR
-    HTTP["HTTP / CLI"] --> API["API adapters"]
-    API --> APP["Application services"]
-    APP --> PORTS["Narrow ports"]
-    PORTS --> MODEL["Local model"]
-    PORTS --> EMB["Local embeddings"]
+    HTTP["HTTP / CLI"] --> API["Адаптеры API"]
+    API --> APP["Сервисы приложения"]
+    APP --> PORTS["Порты"]
+    PORTS --> MODEL["Qwen 3.5 (14B)"]
+    PORTS --> EMB["Локальные эмбеддинги"]
     PORTS --> QD["Qdrant"]
-    PORTS --> DOCS["Parsers / fetcher / chunker"]
+    PORTS --> DOCS["Парсеры / загрузчик / разбиение"]
 ```
 
-`domain/` не знает о FastAPI, LangChain, Qdrant, Torch и HTTPX. `application/` оркестрирует use cases,
-а concrete integrations живут в `adapters/`. `bootstrap/` создаёт и закрывает тяжёлые ресурсы через
-FastAPI lifespan. Подробности: [docs/architecture.md](docs/architecture.md).
+Слой `domain/` не зависит от FastAPI, LangChain, Qdrant, Torch и HTTPX. Слой `application/`
+координирует сценарии через узкие порты, а конкретные интеграции находятся в `adapters/`.
+Композиция и жизненный цикл тяжёлых ресурсов реализованы в `bootstrap/`. Подробнее см.
+[описание архитектуры](docs/architecture.md).
 
 ## Требования
 
 - Python 3.14;
 - [uv](https://docs.astral.sh/uv/) 0.11.x;
 - GNU Make;
-- достаточно RAM/VRAM для выбранных моделей;
-- Docker — только для container workflow.
+- достаточный объём RAM или VRAM для модели Qwen 3.5 (14B) в Q4_K_M;
+- Docker — только для контейнерного запуска.
 
-## Quick start без скачивания моделей
+## Быстрый запуск без весов модели
 
 ```bash
 cp .env.example .env
@@ -65,23 +84,34 @@ make check
 make dev
 ```
 
-Defaults используют fake model, fake embeddings и persistent local Qdrant в `./data/qdrant`.
-Откройте `http://localhost:8000/docs`.
+Начальная конфигурация использует детерминированную тестовую модель, тестовые эмбеддинги и локальный
+Qdrant в каталоге `./data/qdrant`. Документация OpenAPI доступна по адресу
+`http://localhost:8000/docs`.
 
-## Quick start с настоящими локальными моделями
+## Запуск с локальной моделью
 
-Выберите совместимую causal/text-to-text model и embedding model, проверьте их licenses и зафиксируйте
-точные Hugging Face revisions. Скачивание всегда явное:
+Основной артефакт развёртывания называется:
+
+```text
+models/generator/qwen3.5-14b-q4_k_m.gguf
+```
+
+GGUF-квантование Q4_K_M требует реализации порта `ChatModel` на совместимом локальном рантайме,
+например llama.cpp. Имеющийся в репозитории адаптер `HuggingFaceChatModel` предназначен для
+Transformers-чекпойнтов и служит базовой реализацией того же порта. Не следует передавать файл GGUF
+непосредственно в `AutoModelForCausalLM`.
+
+Для режима Transformers заранее загрузите совместимый локальный снимок модели и эмбеддингов:
 
 ```bash
 make model-download \
-  GENERATOR_ID=organization/generator-model \
-  GENERATOR_REVISION=<commit-sha> \
+  GENERATOR_ID=<идентификатор-репозитория-модели> \
+  GENERATOR_REVISION=<неизменяемая-ревизия> \
   EMBEDDING_ID=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 \
-  EMBEDDING_REVISION=<commit-sha>
+  EMBEDDING_REVISION=<неизменяемая-ревизия>
 ```
 
-Затем измените `.env`:
+Затем настройте `.env`:
 
 ```dotenv
 MODEL__BACKEND=huggingface
@@ -89,7 +119,7 @@ MODEL__SOURCE=filesystem
 MODEL__PATH=./models/generator
 MODEL__LOCAL_FILES_ONLY=true
 MODEL__TRUST_REMOTE_CODE=false
-MODEL__ALIAS=my-local-model
+MODEL__ALIAS=qwen3.5-14b-q4_k_m
 
 EMBEDDINGS__BACKEND=huggingface
 EMBEDDINGS__SOURCE=filesystem
@@ -97,25 +127,17 @@ EMBEDDINGS__PATH=./models/embeddings
 EMBEDDINGS__LOCAL_FILES_ONLY=true
 ```
 
-Проверка pre-downloaded generator без участия обычного CI:
+Проверка заранее загруженной модели не входит в обычный CI и запускается отдельно:
 
 ```bash
 make model-smoke
 TEST_MODEL_PATH=./models/generator make test-model
 ```
 
-Cache mode использует уже существующий Hugging Face cache:
+HTTP-клиент не может выбирать идентификатор модели, путь, ревизию, устройство, параметры генерации
+или адрес Qdrant. Все эти настройки принадлежат серверу.
 
-```dotenv
-MODEL__SOURCE=cache
-MODEL__ID=organization/model-name
-MODEL__REVISION=<commit-sha>
-MODEL__LOCAL_FILES_ONLY=true
-```
-
-HTTP-клиент не может выбирать model ID, path, revision, device, generation parameters или Qdrant URL.
-
-## Настоящий offline mode
+## Полностью автономный режим
 
 ```dotenv
 OFFLINE_MODE=true
@@ -125,41 +147,40 @@ MODEL__LOCAL_FILES_ONLY=true
 EMBEDDINGS__LOCAL_FILES_ONLY=true
 ```
 
-При `OFFLINE_MODE=true` приложение принудительно включает local-only для обеих моделей и отключает URL
-ingestion. Отсутствующие weights приводят к безопасной ошибке с подсказкой запустить `make
-model-download`; runtime не переключается на внешний inference provider.
+При `OFFLINE_MODE=true` приложение разрешает только локальные файлы моделей и отключает загрузку URL.
+Отсутствующие веса приводят к контролируемой ошибке; переключения на внешний поставщик моделей нет.
 
 ## API
 
-| Endpoint | Назначение |
+| Метод и путь | Назначение |
 | --- | --- |
-| `POST /api/v1/chat` | Stateless chat с server-owned system prompt |
-| `POST /api/v1/documents/upload` | Multipart upload одного PDF/TXT/Markdown |
-| `POST /api/v1/documents/url` | Безопасная загрузка HTML/text URL |
-| `POST /api/v1/retrieval/search` | Dense/sparse/hybrid search с typed filters |
-| `POST /api/v1/rag/query` | Grounded answer и structured citations |
-| `DELETE /api/v1/documents/{document_id}` | Удалить все chunks документа |
-| `GET /api/v1/system/model` | Безопасный model/embedding/storage status |
-| `GET /health/live` | Проверить процесс и event loop |
-| `GET /health/ready` | Проверить container, embeddings и Qdrant compatibility |
-| `GET /metrics` | Prometheus exposition |
+| `POST /api/v1/chat` | Диалог без серверного хранения истории |
+| `POST /api/v1/documents/upload` | Загрузка одного PDF, TXT или Markdown-файла |
+| `POST /api/v1/documents/url` | Безопасная загрузка HTML или текста по URL |
+| `POST /api/v1/retrieval/search` | Векторный или гибридный поиск с фильтрами |
+| `POST /api/v1/rag/query` | Ответ по найденному контексту со ссылками на источники |
+| `DELETE /api/v1/documents/{document_id}` | Удаление всех фрагментов документа |
+| `GET /api/v1/system/model` | Состояние модели, эмбеддингов и хранилища |
+| `GET /health/live` | Проверка процесса и цикла событий |
+| `GET /health/ready` | Проверка готовности компонентов |
+| `GET /metrics` | Метрики Prometheus |
 
-### Plain chat
+### Диалог
 
 ```bash
 curl --request POST http://localhost:8000/api/v1/chat \
   --header 'Content-Type: application/json' \
-  --data '{"messages":[{"role":"user","content":"Объясни local inference."}]}'
+  --data '{"messages":[{"role":"user","content":"Объясни локальный инференс."}]}'
 ```
 
-### Upload PDF
+### Загрузка PDF
 
 ```bash
 curl --request POST http://localhost:8000/api/v1/documents/upload \
   --form 'file=@./document.pdf;type=application/pdf'
 ```
 
-### Ingest URL
+### Загрузка URL
 
 ```bash
 curl --request POST http://localhost:8000/api/v1/documents/url \
@@ -167,21 +188,22 @@ curl --request POST http://localhost:8000/api/v1/documents/url \
   --data '{"url":"https://example.com/article"}'
 ```
 
-Private, loopback, link-local, multicast и credentialed URLs запрещены; redirects проверяются заново.
+Запрещены приватные, loopback, link-local, multicast-адреса и URL со встроенными учётными данными.
+Каждое перенаправление проверяется повторно.
 
-### Retrieval
+### Поиск
 
 ```bash
 curl --request POST http://localhost:8000/api/v1/retrieval/search \
   --header 'Content-Type: application/json' \
   --data '{
-    "query":"Как работает offline mode?",
+    "query":"Как работает автономный режим?",
     "top_k":5,
     "filters":{"source_types":["pdf","markdown"]}
   }'
 ```
 
-### RAG query
+### RAG-запрос
 
 ```bash
 curl --request POST http://localhost:8000/api/v1/rag/query \
@@ -189,12 +211,12 @@ curl --request POST http://localhost:8000/api/v1/rag/query \
   --data '{"query":"Что сказано о локальном хранении?","top_k":5}'
 ```
 
-Сокращённый response:
+Сокращённый ответ:
 
 ```json
 {
   "answer": "… [source-1]",
-  "model": "my-local-model",
+  "model": "qwen3.5-14b-q4_k_m",
   "usage": {
     "input_tokens": 100,
     "output_tokens": 30,
@@ -217,9 +239,9 @@ curl --request POST http://localhost:8000/api/v1/rag/query \
 }
 ```
 
-## CLI ingestion
+## Индексация через CLI
 
-CLI вызывает те же application services, что и API:
+CLI использует те же сервисы приложения, что и HTTP API:
 
 ```bash
 uv run ai-template-ingest file ./document.pdf
@@ -227,11 +249,11 @@ uv run ai-template-ingest file ./notes.md
 uv run ai-template-ingest url https://example.com/article
 ```
 
-## Qdrant modes
+## Режимы Qdrant
 
-- `memory`: tests, evals и ephemeral smoke checks;
-- `local` (default): embedded persistent storage в `QDRANT__PATH`;
-- `server`: отдельный Qdrant по `QDRANT__URL`, optional gRPC.
+- `memory` — тесты, оценки качества и временные проверки;
+- `local` — встроенное постоянное хранилище в `QDRANT__PATH`;
+- `server` — отдельный сервер Qdrant по HTTP или gRPC.
 
 ```dotenv
 QDRANT__MODE=server
@@ -239,7 +261,7 @@ QDRANT__URL=http://qdrant:6333
 QDRANT__PREFER_GRPC=true
 ```
 
-Hybrid retrieval:
+Для гибридного поиска:
 
 ```bash
 make install-all
@@ -251,24 +273,18 @@ QDRANT__SPARSE_MODEL_ID=Qdrant/bm25
 QDRANT__SPARSE_CACHE_DIR=./models/fastembed
 ```
 
-Без optional extra dense mode продолжает работать, а sparse/hybrid configuration завершается понятной
-ошибкой. Sparse model cache нужно подготовить до изолированного deployment.
+Метаданные коллекции фиксируют отпечаток эмбеддингов, размерность, метрику расстояния, режим поиска
+и имена векторов. При несовместимости необходимо выбрать новую коллекцию или выполнить переиндексацию.
 
-Collection metadata фиксирует embedding fingerprint, dimension, distance, retrieval mode и vector
-names. Несовместимая коллекция не используется молча: выберите другое имя, удалите index или выполните
-reindex.
+## Вычислительные устройства
 
-## CPU, Apple Silicon и CUDA
+- CPU: `MODEL__DEVICE=cpu`, `EMBEDDINGS__DEVICE=cpu`;
+- Apple Silicon: `MODEL__DEVICE=mps`;
+- CUDA: установите сборку PyTorch, совместимую с драйвером, и задайте `MODEL__DEVICE=cuda`;
+- автоматический выбор: `MODEL__DEVICE=auto` использует порядок CUDA → MPS → CPU.
 
-- CPU: `MODEL__DEVICE=cpu`, `EMBEDDINGS__DEVICE=cpu`; начните с компактной модели.
-- Apple Silicon: `MODEL__DEVICE=mps`; auto выбирает MPS после проверки CUDA.
-- CUDA: установите совместимую с host driver сборку PyTorch согласно официальной инструкции PyTorch и
-  задайте `MODEL__DEVICE=cuda`. CUDA-specific packages не входят в baseline.
-- `MODEL__DEVICE=auto`: CUDA → MPS → CPU.
-
-Каждый Uvicorn worker загружает отдельную копию model weights. Поэтому default — один worker; scale-out
-лучше выполнять отдельными replicas. Prometheus multiprocess mode нужен только при сознательном
-переходе к нескольким process workers.
+Каждый процесс Uvicorn загружает собственную копию модели. По умолчанию используется один рабочий
+процесс; горизонтальное масштабирование выполняется отдельными репликами.
 
 ## Docker Compose
 
@@ -279,37 +295,38 @@ make up
 make logs
 ```
 
-Weights не входят в image и подключаются через `model_data`; local Qdrant использует `app_data`.
-Отдельный server profile:
+Веса не включаются в образ и подключаются через том `model_data`. Локальный Qdrant использует том
+`app_data`. Для отдельного сервера Qdrant:
 
 ```bash
 make qdrant-up
-# Укажите QDRANT__MODE=server и QDRANT__URL=http://qdrant:6333 в .env
+# В .env укажите QDRANT__MODE=server и QDRANT__URL=http://qdrant:6333
 make up
 ```
 
-Контейнеры запускаются non-root, с read-only root filesystem, dropped capabilities и
-`no-new-privileges`. Жёсткие memory limits не заданы: подберите requests/limits по выбранным weights.
+Контейнеры работают без root-прав, с файловой системой только для чтения, отключёнными Linux
+capabilities и параметром `no-new-privileges`.
 
 ## Конфигурация
 
-Все настройки server-owned и используют `env_nested_delimiter="__"`. Полный, исполняемый reference —
-[`.env.example`](.env.example).
+Все настройки принадлежат серверу и используют разделитель вложенности `__`. Полный пример находится
+в файле [`.env.example`](.env.example).
 
 | Группа | Основные параметры |
 | --- | --- |
-| `APP__*`, `API__*` | environment, fake policy, prefix, docs |
-| `MODEL__*` | backend, source, ID/path/revision, device/dtype, limits, concurrency, timeout |
-| `EMBEDDINGS__*` | backend, local source, normalize, batch size, prefixes |
-| `QDRANT__*` | memory/local/server, collection schema, retrieval mode, top K |
-| `CHUNKING__*` | deterministic size, overlap, separators |
-| `INGESTION__*` | bytes, PDF pages, extracted character limits |
-| `WEB__*` | enable switch, SSRF policy, redirects, timeouts, response limit |
-| `RAG__*` | context chunks/characters/tokens, relevance and snippet bounds |
+| `APP__*`, `API__*` | окружение, политика тестовых адаптеров, префикс, OpenAPI |
+| `MODEL__*` | источник, путь, ревизия, устройство, тип данных, лимиты и тайм-аут |
+| `EMBEDDINGS__*` | источник, нормализация, размер пакета и префиксы |
+| `QDRANT__*` | режим хранилища, схема коллекции и режим поиска |
+| `CHUNKING__*` | размер и перекрытие фрагментов |
+| `INGESTION__*` | лимиты файлов, страниц и извлечённого текста |
+| `WEB__*` | политика SSRF, перенаправления, тайм-ауты и размер ответа |
+| `RAG__*` | ограничения контекста, релевантности и цитат |
 
-`trust_remote_code` никогда не включается автоматически. При явном `true` появляется warning log.
+`trust_remote_code` никогда не включается автоматически. Явное значение `true` фиксируется
+предупреждением в журнале.
 
-## Tests и quality gates
+## Тестирование и контроль качества
 
 ```bash
 make test-unit
@@ -319,71 +336,70 @@ make security
 make build
 ```
 
-Обычные tests используют fake adapters и Qdrant memory mode, не требуют token, Docker, сети или model
-downloads. Markers: `unit`, `integration`, `model`, `network`, `slow`.
+Обычные тесты используют тестовые адаптеры и Qdrant в памяти. Им не нужны токены, Docker, сеть или
+веса модели. Доступные маркеры: `unit`, `integration`, `model`, `network`, `slow`.
 
-## Evals
+## Оценки качества
 
 ```bash
 make eval
 ```
 
-Version-controlled suites находятся в `evals/cases/`: chat, retrieval, RAG и security. Gate считает
-hit-rate@K, MRR, recall@K, answer fragments, citations, no-answer и prompt-injection cases. Default
-evals полностью deterministic и offline-safe.
+Наборы в `evals/cases/` проверяют диалог, поиск, RAG и безопасность. Рассчитываются hit-rate@K, MRR,
+recall@K, наличие ожидаемых фрагментов, корректность цитат, отказ при отсутствии ответа и устойчивость
+к внедрению инструкций. Стандартный набор полностью детерминирован и работает без сети.
 
-## Observability
+## Наблюдаемость
 
-- structured lifecycle, generation, embedding, retrieval и ingestion events без prompt/document body;
-- request ID принимается только в безопасном формате или генерируется сервером;
-- Prometheus HTTP, model load/generation/token, embedding, retrieval, ingestion и document metrics;
-- low-cardinality labels без URL, filename, document ID, query и exception text;
-- liveness не выполняет inference; readiness не скачивает и не прогревает lazy model.
+- структурированные события жизненного цикла, генерации, поиска и индексации без содержимого данных;
+- безопасный идентификатор каждого HTTP-запроса;
+- метрики HTTP, загрузки модели, генерации, токенов, эмбеддингов, поиска и документов;
+- метки с низкой кардинальностью без URL, имён файлов, запросов и текста исключений;
+- liveness не запускает генерацию, а readiness не скачивает и не прогревает лениво загружаемую модель.
 
-## Security
+## Безопасность
 
-Ключевые границы: no arbitrary model/path/endpoint from HTTP, upload/PDF/text limits, filename
-sanitization, SSRF и redirect validation, response streaming limit, server-owned prompts, escaped
-retrieved context, `trust_remote_code=false`, safe public errors, dependency audit и hardened containers.
-Подробнее: [SECURITY.md](SECURITY.md) и [docs/security.md](docs/security.md).
+Основные меры: запрет выбора модели и путей через HTTP, ограничения загрузок, очистка имён файлов,
+защита от SSRF, ограничение потоковых ответов, серверные системные промпты, изоляция найденного
+контекста, `trust_remote_code=false`, безопасные публичные ошибки, аудит зависимостей и защищённые
+контейнеры. Подробнее: [политика безопасности](SECURITY.md) и
+[модель угроз](docs/security.md).
 
-## Model licenses
+## Лицензии моделей
 
-Template не определяет, какую модель можно использовать в вашем продукте. До скачивания проверьте
-license, acceptable-use policy, geographic restrictions, training-data implications и право на
-commercial redistribution. Model files намеренно исключены из Git и Docker build context.
+Перед использованием выбранного артефакта Qwen 3.5 (14B) необходимо проверить его происхождение,
+лицензию, допустимые сценарии применения, ограничения распространения и контрольную сумму. Веса
+модели исключены из Git и контекста сборки Docker.
 
-## Использование как GitHub Template
+## Использование как шаблона GitHub
 
-После **Use this template**:
+После нажатия **Use this template**:
 
-1. переименуйте package/project metadata;
-2. выберите и зафиксируйте revisions локальных моделей;
-3. замените prompts и eval fixtures продуктовой спецификой;
-4. определите authentication, authorization, retention и backup policies;
-5. при смене embeddings создайте новую collection или migration/reindex plan.
+1. измените название пакета и метаданные проекта;
+2. зарегистрируйте точную ревизию и контрольную сумму модельного артефакта;
+3. замените системные промпты и наборы оценок требованиями продукта;
+4. определите правила аутентификации, авторизации, хранения и резервного копирования;
+5. при смене эмбеддингов создайте новую коллекцию или план переиндексации.
 
-## Extension recipes
+## Расширение проекта
 
-Рецепты OCR, reranking, authentication, queues, object storage, multiple replicas и tracing находятся
-в [docs/extensions.md](docs/extensions.md). Они не являются обязательными dependencies baseline.
+Рецепты добавления OCR, повторного ранжирования, авторизации, очередей и нескольких реплик находятся
+в [руководстве по расширению](docs/extensions.md).
 
-## Migration
+## Миграция
 
-Переход с прежнего remote-provider template описан в
-[docs/migration-local-models.md](docs/migration-local-models.md). Старые credentials и runtime provider
-calls удалены намеренно.
+Переход с внешних поставщиков моделей на локальный профиль Qwen 3.5 (14B) описан в
+[руководстве по миграции](docs/migration-local-models.md).
 
-## Known limitations
+## Известные ограничения
 
-- качество и language coverage зависят от выбранных generator/embedding models;
-- первая загрузка и warmup могут занимать заметное время;
-- каждый process worker дублирует RAM/VRAM;
-- timeout ограничивает ожидание, но Python thread cancellation не всегда физически останавливает уже
-  начатый Torch inference;
-- OCR не входит в baseline, поэтому scanned PDF без text layer отклоняется;
-- JavaScript-rendered pages не поддерживаются;
-- Qdrant version replacement максимально безопасен, но не является cross-system transaction;
-- real-model smoke не выполняется обычным CI;
-- sparse model cache для hybrid mode подготавливается отдельно;
-- model licensing и hardware sizing остаются ответственностью пользователя.
+- качество зависит от конкретного артефакта Qwen 3.5 (14B), промптов и набора данных;
+- первая загрузка и прогрев могут занимать значительное время;
+- каждый рабочий процесс дублирует потребление RAM или VRAM;
+- тайм-аут ограничивает ожидание запроса, но не всегда останавливает уже начатый поток Torch;
+- OCR не входит в базовую поставку, поэтому PDF без текстового слоя отклоняются;
+- страницы, полностью создаваемые JavaScript, не поддерживаются;
+- замена версии документа в Qdrant не является транзакцией между несколькими системами;
+- проверка настоящей модели не запускается в стандартном CI;
+- кэш разреженной модели для гибридного поиска подготавливается отдельно;
+- подбор оборудования и соблюдение лицензии остаются ответственностью владельца развёртывания.
