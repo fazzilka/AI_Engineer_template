@@ -64,11 +64,16 @@ async def test_invalid_request_id_is_replaced(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_metrics_endpoint_exports_application_metrics(client: AsyncClient) -> None:
+    await client.post(
+        "/api/v1/chat",
+        json={"messages": [{"role": "user", "content": "metrics"}]},
+    )
     response = await client.get("/metrics")
 
     assert response.status_code == 200
     assert "app_http_requests_total" in response.text
     assert "app_llm_requests_total" in response.text
+    assert 'route="/api/v1/chat"' in response.text
 
 
 @pytest.mark.asyncio
