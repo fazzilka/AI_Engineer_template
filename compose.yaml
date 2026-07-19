@@ -4,14 +4,44 @@ services:
       context: .
     env_file:
       - .env
+    environment:
+      MODEL__PATH: /app/models/generator
+      EMBEDDINGS__PATH: /app/models/embeddings
+      QDRANT__PATH: /app/data/qdrant
+      HF_HOME: /cache/huggingface
     ports:
       - "8000:8000"
+    volumes:
+      - model_data:/app/models:ro
+      - app_data:/app/data
+      - hf_cache:/cache/huggingface:ro
     init: true
     restart: unless-stopped
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:size=64m,noexec,nosuid
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.0
+    profiles:
+      - qdrant-server
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  model_data:
+  qdrant_data:
+  app_data:
+  hf_cache:
