@@ -2,7 +2,7 @@
 
 ## Local setup
 
-Requirements: Python 3.12+, `uv` 0.11.x, and GNU Make. Docker is optional.
+Requirements: Python 3.14, uv 0.11.x, and GNU Make. Docker is optional.
 
 ```bash
 cp .env.example .env
@@ -11,37 +11,59 @@ make check
 make dev
 ```
 
-Keep tests offline by default. The configured fake LLM adapter makes the complete API path available
-without credentials.
+Default tests and evals must remain deterministic and offline. They use fake model/embeddings and Qdrant
+memory mode; they must not download weights, require secrets, or start Docker.
 
 ## Making a change
 
-- Put business rules in `application/` or `domain/`, not in HTTP routes.
-- Add external integrations behind a port and an adapter.
-- Add tests for new behavior and regressions.
-- Update `evals/cases.jsonl` when generation behavior or prompts change.
-- Update documentation when configuration or public contracts change.
-- Run `make check` before opening a pull request.
+- Keep domain and application independent of FastAPI, LangChain, Qdrant, Transformers, Torch, HTTPX,
+  Prometheus, and structlog.
+- Add external behavior behind a narrow port and concrete adapter.
+- Keep model selection, paths, revisions, devices, and generation parameters server-side.
+- Add tests for behavior and adapter contracts.
+- Prompt/generation changes require RAG/chat/security eval updates.
+- Chunking or retrieval changes require retrieval eval updates.
+- Embedding or Qdrant schema changes require a collection migration note and compatibility tests.
+- URL changes require SSRF/redirect tests; PDF changes require malformed/encrypted/textless tests.
+- Run `make security` for security-sensitive or dependency changes.
+- Update documentation and `.env.example` when public contracts or configuration change.
+
+## Commands
+
+```bash
+make format
+make lint
+make typecheck
+make test-unit
+make test-integration
+make eval
+make check
+make security
+make build
+```
+
+`make test-model` and `make model-smoke` are opt-in and require pre-downloaded local files.
 
 ## Commits
 
-Use small Conventional Commits with an English summary:
+Use focused Conventional Commits with an English summary:
 
 ```text
 <type>(<scope>): <short summary>
 ```
 
-Supported types are `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`, and `style`.
+Supported types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`, `style`.
 
 Use a second paragraph for incompatible changes:
 
 ```bash
-git commit -m "feat(api): replace legacy completion contract" \
-  -m "BREAKING CHANGE: clients must send a messages array instead of a prompt string"
+git commit -m "refactor(model): replace legacy runtime configuration" \
+  -m "BREAKING CHANGE: configure an in-process local model through MODEL__* settings."
 ```
+
+Do not commit model weights, caches, vector data, `.env`, coverage/build artifacts, or IDE state.
 
 ## Pull requests
 
-Explain the problem and the chosen boundary, keep unrelated changes out, and include verification
-evidence. A pull request that changes AI behavior should describe both the eval dataset change and the
-observed result.
+Explain the affected boundary, security implications, migration needs, tests/evals, and actual verification
+commands. Do not claim real-model, audit, Docker, or hardware behavior that was not executed.

@@ -2,34 +2,46 @@
 
 ## Purpose
 
-This repository is a reusable, production-oriented foundation for AI engineering projects.
-Keep the core provider-neutral and make optional capabilities easy to add without forcing them on
-every generated project.
+This repository is a provider-free, production-oriented foundation for fully local AI and RAG projects.
+Keep the core portable, offline-safe after model download, and explicit about security and operational
+limits.
 
 ## Required workflow
 
-1. Inspect the affected boundary before editing.
-2. Keep changes small and scoped. Preserve unrelated user work.
-3. Add or update tests for behavior changes.
-4. When prompts, model parameters, retrieval, or generation behavior changes, update `evals/`.
-5. Run `make check` before handing work back.
-6. Do not push, rewrite history, or perform destructive Git operations unless explicitly asked.
+1. Inspect the affected boundary before editing and preserve unrelated work.
+2. Keep changes small and add/update tests for behavior changes.
+3. External model APIs are prohibited without a separate architectural decision.
+4. Real model downloads are prohibited in unit tests, default evals, and CI.
+5. LangChain types must not enter domain or application models.
+6. Model selection, paths, revisions, devices, and generation settings remain server-side.
+7. Model code must cross a thread/process boundary and must not block the event loop.
+8. Prompt/model parameter changes require eval updates.
+9. Chunking changes require retrieval eval updates.
+10. Embedding changes require a collection migration/reindex note.
+11. Qdrant schema changes require compatibility tests.
+12. URL ingestion changes require SSRF and redirect tests.
+13. PDF parser changes require malformed, encrypted, oversized, and textless PDF tests.
+14. Run `make check` before handoff.
+15. Run `make security` for security-sensitive and dependency changes.
+16. Do not push, rewrite history, or perform destructive Git operations unless explicitly asked.
+17. Never commit model files, Hugging Face caches, vector data, secrets, or generated artifacts.
 
 ## Architecture rules
 
-- `domain/` contains provider- and framework-independent models.
-- `ports/` defines interfaces used by the application.
-- `application/` orchestrates use cases and depends only on domain models and ports.
-- `adapters/` implements external systems such as LLM providers, stores, queues, and vector databases.
-- `api/` maps HTTP contracts to application use cases; it does not contain business logic.
-- `observability/` wraps boundaries without leaking Prometheus or logging concerns into domain code.
-- Keep model selection and credentials server-side. Never accept arbitrary provider credentials from an
-  API request.
-- Unit and integration tests must not require network access or real secrets.
+- `domain/`: immutable provider/framework-independent models, rules, and errors.
+- `ports/`: narrow Protocol contracts used by application services.
+- `application/`: orchestration; no FastAPI, Qdrant, LangChain, Transformers, Torch, HTTPX, Prometheus,
+  structlog, or concrete adapters.
+- `adapters/`: local models, embeddings, parsers, fetcher, chunker, and vector store implementations.
+- `api/`: input validation and transport/domain mapping; no RAG/model/storage logic.
+- `bootstrap/`: composition root and resource lifecycle.
+- `observability/`: safe boundary wrappers with low-cardinality metrics and no content logging.
+
+Unit/integration tests must not require network access, secrets, real weights, or a Qdrant server.
 
 ## Commit convention
 
-Create focused commits, preferably one independently reviewable file or concern at a time. Use:
+Create focused Conventional Commits:
 
 ```text
 <type>(<scope>): <short English summary>
@@ -37,19 +49,18 @@ Create focused commits, preferably one independently reviewable file or concern 
 
 Allowed types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`, `style`.
 
-For an incompatible change, add an English footer in a second commit message paragraph:
-
-```text
-BREAKING CHANGE: <clear description and migration guidance>
-```
+For incompatible changes, add an English `BREAKING CHANGE:` footer with migration guidance.
 
 ## Canonical commands
 
 - Install: `make install`
+- Install optional features: `make install-all`
 - Run locally: `make dev`
 - Format: `make format`
-- Full verification: `make check`
+- Full offline verification: `make check`
+- Dependency audit: `make security`
 - Build artifacts: `make build`
 - Build container: `make docker-build`
+- Opt-in local model check: `make model-smoke`
 
-Use `uv` for dependencies and keep `uv.lock` synchronized with `pyproject.toml`.
+Use uv only and keep `pyproject.toml` and `uv.lock` synchronized.
