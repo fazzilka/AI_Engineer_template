@@ -104,9 +104,7 @@ class OpenAICompatibleLLMClient:
         messages: Sequence[ChatMessage],
         system_prompt: str,
     ) -> list[ChatCompletionMessageParam]:
-        payload: list[ChatCompletionMessageParam] = [
-            {"role": "system", "content": system_prompt}
-        ]
+        payload: list[ChatCompletionMessageParam] = [{"role": "system", "content": system_prompt}]
         for message in messages:
             if message.role is MessageRole.USER:
                 payload.append({"role": "user", "content": message.content})
